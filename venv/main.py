@@ -2,16 +2,15 @@ from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import FileResponse
 import os
 import subprocess
+import firebase_admin
+from firebase_admin import credentials, storage
 import uuid
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
 
 app = FastAPI()
 
-# Autenticação do Google Drive
-gauth = GoogleAuth()
-gauth.LocalWebserverAuth()  # Cria as credenciais se necessário
-drive = GoogleDrive(gauth)
+# Inicialize o Firebase
+cred = credentials.Certificate("caminho/para/suas/credenciais-firebase.json")
+firebase_admin.initialize_app(cred, {"storageBucket": "seu-bucket-firebase.appspot.com"})
 
 @app.post("/process_video")
 async def process_video(video: UploadFile, name: str = Form(...)):
@@ -24,13 +23,14 @@ async def process_video(video: UploadFile, name: str = Form(...)):
     output_path = f"{uuid.uuid4()}_processed.mp4"
     subprocess.run(["ffmpeg", "-i", video_path, "-vf", f"drawtext=text='{name}':x=10:y=10:fontsize=50:fontcolor=white", output_path])
 
-    # Envie o vídeo processado para o Google Drive
-    file_drive = drive.CreateFile({'title': output_path})
-    file_drive.SetContentFile(output_path)
-    file_drive.Upload()
+    # Envie o vídeo processado para o Firebase Storage
+    bucket = storage.bucket()
+    blob = bucket.blob(output_path)
+    blob.upload_from_filename(output_path)
+    blob.make_public()
 
-    # Gere o link de download do Google Drive
-    download_url = file_drive['alternateLink']
+    # Retorne a URL pública do vídeo
+    download_url = blob.public_url
 
     # Remova os arquivos locais
     os.remove(video_path)
